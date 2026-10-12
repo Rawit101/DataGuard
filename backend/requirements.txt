@@ -1,0 +1,8 @@
+fastapi==0.123.10
+uvicorn==0.38.0
+pydantic==2.12.5
+python-multipart==0.0.20
+duckdb==1.4.2
+sqlglot==28.8.0
+pytest==9.0.1
+httpx==0.28.1

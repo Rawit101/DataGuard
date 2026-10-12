@@ -1,0 +1,46 @@
+# Local datasets, exports, test workspaces, browser downloads, and npm cache
+/work/
+/.dataguard/
+/.npm-cache/
+**/playwright-browsers/
+**/ms-playwright/
+**/.playwright/
+**/browser-binaries/
+
+# Reinstallable dependencies and Python environments
+**/node_modules/
+**/.venv/
+**/venv/
+**/env/
+**/__pycache__/
+*.py[cod]
+
+# Generated builds, reports, and caches
+**/dist/
+**/build/
+**/.next/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.tox/
+**/playwright-report/
+**/test-results/
+**/coverage/
+**/htmlcov/
+*.tsbuildinfo
+.coverage*
+*.log
+
+# Local settings and credentials; keep the safe example
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+
+# OS metadata
+.DS_Store
+Thumbs.db

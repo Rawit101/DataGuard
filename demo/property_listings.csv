@@ -1,0 +1,13 @@
+listing_id,province_code,district,property_type,price_thb,area_sqm,listed_at
+L001,BKK,Pathum Wan,Condo,5000000,50,2026-01-01
+L002,NBI,Mueang Nonthaburi,House,8000000,160,2026-01-02
+L003,SPK, Mueang Samut Prakan ,Condo,3000000,30,2026-01-03
+L004,CBI,Bang Lamung,Townhome,4500000,90,2026-01-04
+L005,BKK,Bang Kapi,Condo,,45,2026-01-05
+L006,BKK,Chatuchak,House,9000000,180,not-a-date
+L007,NBI,Pak Kret,Condo,2500000,0,2026-01-07
+L008,XXX,Unknown District,Condo,2000000,25,2026-01-08
+L001,BKK,Pathum Wan,Condo,9000000,50,2026-01-09
+L009,BKK, Bang Rak ,House,4000000,80,2026-01-10
+L010,SPK,Bang Phli,Condo,not-a-number,40,2026-01-11
+L011,CBI,Si Racha,House,6000000,120,2026-01-12
