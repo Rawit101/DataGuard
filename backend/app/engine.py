@@ -4,8 +4,6 @@ import json
 import threading
 import time
 from contextlib import contextmanager
-from datetime import date, datetime
-from decimal import Decimal
 from pathlib import Path
 
 import duckdb
@@ -15,6 +13,7 @@ from sqlglot import exp
 from .config import MEMORY_LIMIT, QUERY_TIMEOUT_SECONDS, managed_path
 from .db import connect as metadata, many, new_id, now, one
 from .imports import quote_ident, sql_literal
+from .serialization import json_value
 
 
 SAFE_FUNCTIONS = {
@@ -26,14 +25,6 @@ SAFE_FUNCTIONS = {
     "DATE_PART", "FLOOR", "CEIL", "CEILING", "POWER", "SQRT", "STDDEV",
     "COUNT_IF", "BOOL_AND", "BOOL_OR", "MEDIAN", "NTILE", "PERCENT_RANK",
 }
-
-
-def json_value(value):
-    if isinstance(value, (date, datetime, Decimal)):
-        return str(value)
-    if isinstance(value, bytes):
-        return value.hex()
-    return value
 
 
 def rows_as_dicts(cursor, rows):
@@ -171,8 +162,8 @@ def profile_dataset(dataset_id: str) -> dict:
                 item.update({"min": json_value(typed[0]), "max": json_value(typed[1]),
                              "invalid_count": typed[2], "summary_basis": "valid parsed values"})
                 if declared in {"BIGINT", "DOUBLE", "DECIMAL"}:
-                    item["mean"] = con.execute(
-                        f"SELECT avg(TRY_CAST({field} AS DOUBLE)) FROM {table}").fetchone()[0]
+                    item["mean"] = json_value(con.execute(
+                        f"SELECT avg(TRY_CAST({field} AS DOUBLE)) FROM {table}").fetchone()[0])
             results.append(item)
     return {"dataset_id": dataset_id, "row_count": ds["row_count"], "columns": results,
             "metrics": "exact"}

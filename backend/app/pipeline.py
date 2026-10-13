@@ -166,9 +166,12 @@ def compile_pipeline(project_id: str, definition: dict, stop_after: int | None =
             if keep not in {"first", "last"}:
                 raise ValueError("Keep policy must be first or last")
             direction = "ASC" if keep == "first" else "DESC"
+            rank_column = "__dataguard_rank"
+            while rank_column.casefold() in {c.casefold() for c in columns}:
+                rank_column += "_"
             sql = (f"SELECT {select} FROM (SELECT *, row_number() OVER "
                    f"(PARTITION BY {', '.join(q(c) for c in keys)} ORDER BY {q(order)} {direction}, "
-                   f"{q('__source_row_id')} {direction}) AS __rank FROM {from_sql}) WHERE __rank = 1")
+                   f"{q('__source_row_id')} {direction}) AS {q(rank_column)} FROM {from_sql}) WHERE {q(rank_column)} = 1")
             description = f"Deduplicate by {', '.join(keys)}; keep {keep} by {order}"
         elif kind == "filter":
             conditions = step.get("conditions", [])

@@ -13,8 +13,9 @@ import duckdb
 from fastapi import UploadFile
 from pydantic import BaseModel, Field
 
-from .config import MAX_UPLOAD_BYTES, managed_path
+from .config import MAX_UPLOAD_BYTES, MEMORY_LIMIT, managed_path
 from .db import connect, new_id, now, one
+from .serialization import json_value
 
 
 class ImportOptions(BaseModel):
@@ -77,7 +78,8 @@ def type_valid(value: str | None, typ: str) -> bool:
         return True
     try:
         if typ == "BIGINT":
-            return re.fullmatch(r"[+-]?\d+", value) is not None
+            return (re.fullmatch(r"[+-]?\d+", value) is not None
+                    and -(2**63) <= int(value) < 2**63)
         if typ in {"DOUBLE", "DECIMAL"}:
             return Decimal(value).is_finite()
         if typ == "DATE":
@@ -173,7 +175,7 @@ def inspect_file(path: Path, options: ImportOptions) -> dict:
             count = con.execute("SELECT count(*) FROM read_parquet(?)", [str(path)]).fetchone()[0]
             rows = con.execute("SELECT * FROM read_parquet(?) LIMIT 20", [str(path)]).fetchall()
             return {"columns": [{"name": c[0], "inferred_type": c[1]} for c in columns],
-                    "row_count": count, "issue_count": 0, "rows": [list(r) for r in rows]}
+                    "row_count": count, "issue_count": 0, "rows": json_value(rows)}
         finally:
             con.close()
     columns = None
@@ -230,13 +232,15 @@ def commit_import(project_id: str, token: str, name: str, alias: str | None,
             raise ValueError(f"SQL alias already exists in this project: {chosen_alias}")
     issues = []
     count = 0
+    accepted_path = managed_path("tmp", dataset_id + ".accepted.csv")
     try:
         if state["suffix"] == ".csv":
-            con = duckdb.connect()
-            try:
-                defs = ", ".join(f"{quote_ident(c['name'])} VARCHAR" for c in schema)
-                con.execute(f"CREATE TABLE imported (__source_row_id BIGINT, {defs})")
-                batch = []
+            # Normalize accepted records once, preserving row IDs and raw values.
+            # QUOTE_NOTNULL (Python 3.12+) distinguishes NULL from quoted empty text.
+            # Bulk COPY avoids a DuckDB transaction/insert for every individual row.
+            with accepted_path.open("w", newline="", encoding="utf-8") as accepted:
+                writer = csv.writer(accepted, quoting=csv.QUOTE_NOTNULL)
+                writer.writerow(["__source_row_id", *(c["name"] for c in schema)])
                 for event in csv_rows(tmp, ImportOptions.model_validate(state["options"])):
                     if event[0] == "row":
                         row_id, values = event[1], event[2]
@@ -244,20 +248,23 @@ def commit_import(project_id: str, token: str, name: str, alias: str | None,
                             if not type_valid(values[i], col["declared_type"]):
                                 issues.append((event[1], col["name"], str(values[i]),
                                                f"Cannot parse as {col['declared_type']}; value preserved"))
-                                if len(issues) > 100000:
-                                    raise ValueError("Import has more than 100,000 issues; fix the source or split the file")
-                        batch.append([row_id, *values])
+                        writer.writerow([row_id, *values])
                         count += 1
-                        if len(batch) >= 1000:
-                            con.executemany(f"INSERT INTO imported VALUES ({','.join('?' for _ in batch[0])})", batch)
-                            batch.clear()
                     elif event[0] == "reject":
                         issues.append((event[1], event[2], event[3], event[4]))
-                        if len(issues) > 100000:
-                            raise ValueError("Import has more than 100,000 issues; fix the source or split the file")
-                if batch:
-                    con.executemany(f"INSERT INTO imported VALUES ({','.join('?' for _ in batch[0])})", batch)
-                con.execute(f"COPY imported TO {sql_literal(data_path)} (FORMAT parquet)")
+                    if len(issues) > 100000:
+                        raise ValueError("Import has more than 100,000 issues; fix the source or split the file")
+            con = duckdb.connect(config={"memory_limit": MEMORY_LIMIT, "threads": "2"})
+            try:
+                columns = "{" + ", ".join([
+                    f"{sql_literal('__source_row_id')}: 'BIGINT'",
+                    *(f"{sql_literal(c['name'])}: 'VARCHAR'" for c in schema)
+                ]) + "}"
+                con.execute(
+                    f"COPY (SELECT * FROM read_csv({sql_literal(accepted_path)}, "
+                    f"auto_detect=false, header=true, delim=',', quote='\"', escape='\"', "
+                    f"columns={columns}, nullstr='', allow_quoted_nulls=false, parallel=false)) "
+                    f"TO {sql_literal(data_path)} (FORMAT parquet)")
             finally:
                 con.close()
         else:
@@ -285,3 +292,5 @@ def commit_import(project_id: str, token: str, name: str, alias: str | None,
         if raw_path.exists():
             raw_path.replace(tmp)
         raise
+    finally:
+        accepted_path.unlink(missing_ok=True)

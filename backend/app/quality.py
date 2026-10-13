@@ -109,9 +109,13 @@ def evaluate_rule(con, rule: dict, alias: str, columns: set[str], project_id: st
             names = cfg.get("columns") or [cfg["column"]]
             parts = ", ".join(quote_ident(n) for n in names)
             condition = " AND ".join(f"{quote_ident(n)} IS NOT NULL" for n in names)
-            failed_sql = (f"SELECT * EXCLUDE (__duplicate_count) FROM "
-                          f"(SELECT *, count(*) OVER (PARTITION BY {parts}) AS __duplicate_count FROM {table}) AS source "
-                          f"WHERE ({condition}) AND __duplicate_count > 1")
+            count_column = "__dataguard_duplicate_count"
+            while count_column.casefold() in {c.casefold() for c in columns}:
+                count_column += "_"
+            field = quote_ident(count_column)
+            failed_sql = (f"SELECT * EXCLUDE ({field}) FROM "
+                          f"(SELECT *, count(*) OVER (PARTITION BY {parts}) AS {field} FROM {table}) AS source "
+                          f"WHERE ({condition}) AND {field} > 1")
         else:
             failed_sql = f"SELECT * FROM {table} AS source WHERE {where}"
         failed = con.execute(f"SELECT count(*) FROM ({failed_sql})").fetchone()[0]

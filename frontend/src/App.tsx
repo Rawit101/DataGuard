@@ -47,8 +47,8 @@ export default function App(){
       <div className="sidebar-footer">Local workspace · Private by default<br/>Version 0.1.0</div>
     </aside>
     <main className="main">
-      <header className="topbar"><div><p className="eyebrow">Data engineering workspace</p><h1>{current.label}</h1><p>{current.subtitle}</p></div>
-        <div className="project-control"><label htmlFor="project-select" className="small-text muted">Project</label><select id="project-select" className="control" value={projectId} onChange={e=>setProjectId(e.target.value)}><option value="">Choose project</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+      <header className="topbar"><div className="page-heading"><p className="eyebrow">Data engineering workspace</p><h1>{current.label}</h1><p>{current.subtitle}</p></div>
+        <div className="field project-control"><label htmlFor="project-select">Project</label><select id="project-select" className="control" value={projectId} onChange={e=>setProjectId(e.target.value)}><option value="">Choose project</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
       </header>
       {notice&&<div role="status" className={'notice'+(notice.error?' error':'')}>{notice.message}</div>}
       {!projectsLoaded&&<div className="card" role="status">{projectsError?<>Could not load projects: {projectsError} <button className="btn small" onClick={refresh}>Retry</button></>:'Loading projects…'}</div>}
