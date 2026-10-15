@@ -280,16 +280,17 @@ def test_remaining_pipeline_controls_execute_and_parquet_import(client):
     assert [(r["id"], r["city"]) for r in rows] == [(1, "เชียงใหม่"), (2, "ภูเก็ต")]
 
 
-def test_late_failure_does_not_publish_completed_output(client):
+def test_late_failure_does_not_publish_completed_output(client, monkeypatch):
     project, _, source, reference = setup_data(client)
     plan = definition(source["id"], reference["id"])
-    plan["output"]["filename"] = "../invalid.parquet"
     pipeline = client.post("/api/pipelines", json={"project_id": project["id"],
-                           "name": "Invalid output name", "definition": plan}).json()
+                           "name": "Late publication failure", "definition": plan}).json()
+    # Force a failure after COPY and file rename, while metadata publication is pending.
+    monkeypatch.setattr(worker, "join_diagnostics", lambda *_: [{"invalid": object()}])
     run = client.post(f"/api/pipelines/{pipeline['id']}/run").json()
     result = worker.execute_run(run["id"])
     assert result["status"] == "failed"
-    assert "Invalid output filename" in result["error"]
+    assert "not JSON serializable" in result["error"]
     assert client.get(f"/api/runs/{run['id']}").json()["output_artifact_id"] is None
     assert client.get(f"/api/projects/{project['id']}/artifacts").json() == []
     assert not list((config.WORKSPACE / "tmp").glob(run["id"] + ".*"))

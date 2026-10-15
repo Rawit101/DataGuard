@@ -14,6 +14,8 @@ FILTER_OPS = {"eq": "=", "ne": "<>", "gt": ">", "gte": ">=", "lt": "<", "lte": "
 
 
 def require_cols(names: list[str], columns: list[str]) -> None:
+    if not isinstance(names, list) or any(not isinstance(n, str) or not n for n in names):
+        raise ValueError("Columns must be a list of nonempty names")
     missing = set(names) - set(columns)
     if missing:
         raise ValueError(f"Unknown columns: {', '.join(sorted(missing))}")
@@ -26,11 +28,15 @@ def expression(node: dict[str, Any], columns: list[str]) -> str:
         require_cols([node["column"]], columns)
         return q(node["column"])
     if "value" in node:
+        if isinstance(node["value"], (dict, list)):
+            raise ValueError("Calculation values must be scalar literals")
         return lit(node["value"])
     op = node.get("op")
+    if not isinstance(op, str):
+        raise ValueError("Calculation needs an operation name")
     if op in {"add", "subtract", "multiply", "divide", "concat"}:
-        left = expression(node["left"], columns)
-        right = expression(node["right"], columns)
+        left = expression(node.get("left"), columns)
+        right = expression(node.get("right"), columns)
         if op == "divide":
             return f"({left} / NULLIF({right}, 0))"
         if op == "concat":
@@ -38,9 +44,12 @@ def expression(node: dict[str, Any], columns: list[str]) -> str:
         sign = {"add": "+", "subtract": "-", "multiply": "*"}[op]
         return f"({left} {sign} {right})"
     if op in {"upper", "lower", "trim", "abs", "round"}:
-        inner = expression(node["arg"], columns)
+        inner = expression(node.get("arg"), columns)
         if op == "round":
-            digits = int(node.get("digits", 2))
+            try:
+                digits = int(node.get("digits", 2))
+            except (TypeError, ValueError) as exc:
+                raise ValueError("Rounding digits must be an integer") from exc
             if digits < 0 or digits > 12:
                 raise ValueError("Rounding digits out of range")
             return f"round({inner}, {digits})"
@@ -54,6 +63,8 @@ def expression(node: dict[str, Any], columns: list[str]) -> str:
 
 
 def filter_condition(condition: dict, columns: list[str]) -> str:
+    if not isinstance(condition, dict):
+        raise ValueError("Filter conditions must be objects")
     col = condition.get("column")
     require_cols([col], columns)
     op = condition.get("op")
@@ -67,8 +78,66 @@ def filter_condition(condition: dict, columns: list[str]) -> str:
     return f"{q(col)} {FILTER_OPS[op]} {lit(value)}"
 
 
+def validate_pipeline_options(definition: dict) -> None:
+    for field in ("pre_rule_ids", "post_rule_ids"):
+        values = definition.get(field, [])
+        if not isinstance(values, list) or any(not isinstance(value, str) or not value for value in values):
+            raise ValueError(f"{field} must be a list of rule IDs")
+    if "strict_quality" in definition and not isinstance(definition["strict_quality"], bool):
+        raise ValueError("strict_quality must be a boolean")
+    output = definition.get("output", {})
+    if not isinstance(output, dict):
+        raise ValueError("Output settings must be an object")
+    if not isinstance(output.get("format", "parquet"), str) or output.get("format", "parquet") not in {"csv", "parquet"}:
+        raise ValueError("Choose CSV or Parquet output")
+    if "utf8_bom" in output and not isinstance(output["utf8_bom"], bool):
+        raise ValueError("utf8_bom must be a boolean")
+    if "filename" in output:
+        name = output["filename"]
+        if (not isinstance(name, str) or not name.strip() or len(name) > 120 or
+                name in {".", ".."} or any(c in name for c in ("/", "\\", "\x00", "\r", "\n"))):
+            raise ValueError("Invalid output filename")
+
+
+def validate_step_shape(step: dict) -> None:
+    for field in ("type", "mode", "target_type", "failure_policy", "keep", "match", "as", "order_by", "column", "reference_dataset_id", "join_type", "prefix", "cardinality"):
+        if field in step and not isinstance(step[field], str):
+            raise ValueError(f"Step {field} must be text")
+    if "enabled" in step and not isinstance(step["enabled"], bool):
+        raise ValueError("Step enabled must be a boolean")
+    for field in ("mapping", "values"):
+        if field in step and not isinstance(step[field], dict):
+            raise ValueError(f"Step {field} must be an object")
+    for field in ("keys", "by", "conditions", "aggregations", "group_by", "columns"):
+        if field in step and not isinstance(step[field], list):
+            raise ValueError(f"Step {field} must be a list")
+    for field in ("by", "conditions", "aggregations"):
+        if any(not isinstance(item, dict) for item in step.get(field, [])):
+            raise ValueError(f"Step {field} must contain objects")
+    for agg in step.get("aggregations", []):
+        if (not isinstance(agg.get("function"), str) or not isinstance(agg.get("as"), str) or
+                agg.get("column") is not None and not isinstance(agg["column"], str)):
+            raise ValueError("Aggregations need function and output names, and an optional column name")
+    for item in step.get("by", []):
+        if not isinstance(item.get("column"), str) or not isinstance(item.get("direction", "asc"), str):
+            raise ValueError("Sort entries need a column name and direction")
+    if step.get("type") == "join" and any(
+        not isinstance(key, dict) or not isinstance(key.get("left"), str) or not isinstance(key.get("right"), str)
+        for key in step.get("keys", [])
+    ):
+        raise ValueError("Join keys need left and right column names")
+    if step.get("type") == "rename" and any(
+        not isinstance(value, str) or not value.strip() or value.startswith("__")
+        for value in step.get("mapping", {}).values()
+    ):
+        raise ValueError("Rename targets must be nonempty, unreserved names")
+
+
 def compile_pipeline(project_id: str, definition: dict, stop_after: int | None = None) -> dict:
+    validate_pipeline_options(definition)
     source_id = definition.get("source_dataset_id")
+    if not isinstance(source_id, str) or not source_id:
+        raise ValueError("Choose a source dataset")
     with connect() as db:
         source = one(db, "SELECT * FROM datasets WHERE id=? AND project_id=?", (source_id, project_id))
     columns = ["__source_row_id"] + [c["name"] for c in json.loads(source["schema_json"])]
@@ -76,6 +145,8 @@ def compile_pipeline(project_id: str, definition: dict, stop_after: int | None =
     steps = definition.get("steps", [])
     if not isinstance(steps, list) or len(steps) > 100:
         raise ValueError("Pipeline must have at most 100 steps")
+    if stop_after is not None and (stop_after < -1 or stop_after >= len(steps)):
+        raise ValueError("Preview step is out of range")
     descriptions = []
     refs = {source_id}
     joins = []
@@ -85,6 +156,7 @@ def compile_pipeline(project_id: str, definition: dict, stop_after: int | None =
             break
         if not isinstance(step, dict):
             raise ValueError("Invalid pipeline step")
+        validate_step_shape(step)
         if step.get("enabled", True) is False:
             descriptions.append({"index": index, "description": "Disabled", "enabled": False})
             continue
@@ -257,6 +329,8 @@ def compile_pipeline(project_id: str, definition: dict, stop_after: int | None =
             description = "Sort by " + ", ".join(x["column"] for x in ordering)
         else:
             raise ValueError(f"Unsupported step type: {kind}")
+        if not columns or len({c.casefold() for c in columns}) != len(columns):
+            raise ValueError("Pipeline output has empty or duplicate column names")
         ctes.append(f"{q(name)} AS ({sql})")
         previous = name
         descriptions.append({"index": index, "description": description, "enabled": True, "columns": list(columns)})

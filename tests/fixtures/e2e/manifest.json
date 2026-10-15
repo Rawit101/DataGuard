@@ -1,0 +1,42 @@
+{
+  "customers.csv": {
+    "bytes": 144,
+    "sha256": "4f1e23ec47ef39b0eccb6b1927462dbe2bf201bc51508692fa509c7dcac02a5d"
+  },
+  "duplicate_records.csv": {
+    "bytes": 135,
+    "sha256": "633359abfc6c8c8c49044bc12d16d6e6c92fc036ad36ed40b6259ff59d3a9e10"
+  },
+  "empty_dataset.csv": {
+    "bytes": 10,
+    "sha256": "0cfb8bf36572c5acdaecaed61c52d27dcaf612b9c5c0cef5732a1fd5e63d01b0"
+  },
+  "invalid_encoding.csv": {
+    "bytes": 14,
+    "sha256": "9c7e41c7b429284abaea42e937faaecd6c56ac8fdb8c560d706242a9b7f6ace4"
+  },
+  "invalid_types.csv": {
+    "bytes": 68,
+    "sha256": "438fe785fdbf293dff003ffee2c759fcf0b079512cc908e40102d2a75f317aea"
+  },
+  "large_dataset.csv": {
+    "bytes": 1783303,
+    "sha256": "0251d86291ff798e306c90b3dc3b1a352d6f7a0799430fe79c3007fab51cfd4e"
+  },
+  "malformed.csv": {
+    "bytes": 79,
+    "sha256": "61eb4a7b075a2c245306a10113f5b9ceef459410f6010de5111014c205688e7b"
+  },
+  "provinces.csv": {
+    "bytes": 62,
+    "sha256": "5c02ea464d1fff290e0df009f57d68ccad5f492030cb82e104566024ca49fd7d"
+  },
+  "unsupported.txt": {
+    "bytes": 5,
+    "sha256": "7cde7fb64fd82bd152710cf238e017b9ab46c0592483edc067ba4f6c75fac108"
+  },
+  "zero_bytes.csv": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

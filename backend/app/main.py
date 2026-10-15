@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 from contextlib import asynccontextmanager
@@ -72,6 +73,11 @@ async def key_error(_request: Request, exc: KeyError):
     return PlainTextResponse(str(exc), status_code=404)
 
 
+@app.exception_handler(sqlite3.IntegrityError)
+async def constraint_error(_request: Request, _exc: sqlite3.IntegrityError):
+    return PlainTextResponse("Record conflicts with existing data. Refresh and retry with a new record ID.", status_code=409)
+
+
 class ProjectIn(BaseModel):
     name: str = Field(min_length=1, max_length=100)
 
@@ -115,6 +121,7 @@ class RuleIn(BaseModel):
 
 
 class PipelineIn(BaseModel):
+    id: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
     project_id: str
     name: str = Field(min_length=1, max_length=100)
     definition: dict
@@ -123,6 +130,7 @@ class PipelineIn(BaseModel):
 class PipelineVersionIn(BaseModel):
     definition: dict
     name: str | None = Field(default=None, min_length=1, max_length=100)
+    expected_current_version: int | None = Field(default=None, ge=1)
 
 
 def validate_definition(project_id: str, definition: dict) -> dict:
@@ -138,6 +146,9 @@ def validate_definition(project_id: str, definition: dict) -> dict:
                 if stage == "pre" and rule["dataset_id"] != source_id:
                     raise ValueError("Pre-run rule must target the source dataset")
                 rule_condition(rule, columns, project_id)
+    from .engine import data_connection
+    with data_connection(project_id) as con:
+        con.execute(f"DESCRIBE SELECT * FROM ({compiled['sql']})")
     return compiled
 
 
@@ -148,9 +159,11 @@ def health():
 
 @app.get("/api/settings")
 def settings():
+    with connect() as db:
+        schema_version = int(one(db, "SELECT value FROM meta WHERE key='schema_version'")["value"])
     return {"workspace": str(WORKSPACE), "max_upload_bytes": MAX_UPLOAD_BYTES,
             "max_preview_rows": MAX_PREVIEW_ROWS, "query_timeout_seconds": QUERY_TIMEOUT_SECONDS,
-            "local_only": True, "schema_version": 2}
+            "local_only": True, "schema_version": schema_version}
 
 
 @app.get("/api/projects")
@@ -373,7 +386,13 @@ def update_rule(rule_id: str, payload: RuleIn):
 @app.delete("/api/quality-rules/{rule_id}")
 def delete_rule(rule_id: str):
     with connect() as db:
-        one(db, "SELECT id FROM quality_rules WHERE id=?", (rule_id,))
+        rule = one(db, "SELECT project_id FROM quality_rules WHERE id=?", (rule_id,))
+        versions = many(db, "SELECT v.definition_json FROM pipeline_versions v JOIN pipelines p "
+                        "ON p.id=v.pipeline_id WHERE p.project_id=?", (rule["project_id"],))
+        for version in versions:
+            definition = json.loads(version["definition_json"])
+            if rule_id in definition.get("pre_rule_ids", []) or rule_id in definition.get("post_rule_ids", []):
+                raise ValueError("Rule is referenced by a saved pipeline version and cannot be deleted")
         db.execute("DELETE FROM quality_runs WHERE rule_id=?", (rule_id,))
         db.execute("DELETE FROM quality_rules WHERE id=?", (rule_id,))
     return {"deleted": True}
@@ -387,36 +406,47 @@ def execute_quality(rule_id: str):
 @app.get("/api/quality-rules/{rule_id}/runs")
 def quality_history(rule_id: str):
     with connect() as db:
-        return many(db, "SELECT * FROM quality_runs WHERE rule_id=? ORDER BY created_at DESC", (rule_id,))
+        one(db, "SELECT id FROM quality_rules WHERE id=?", (rule_id,))
+        rows = many(db, "SELECT * FROM quality_runs WHERE rule_id=? ORDER BY created_at DESC", (rule_id,))
+    for row in rows:
+        row["examples"] = json.loads(row["examples_json"])
+        row["rule_snapshot"] = json.loads(row["rule_snapshot_json"]) if row["rule_snapshot_json"] else None
+    return rows
 
 
 @app.get("/api/projects/{project_id}/pipelines")
 def pipelines(project_id: str):
     with connect() as db:
+        one(db, "SELECT id FROM projects WHERE id=?", (project_id,))
         return many(db, "SELECT * FROM pipelines WHERE project_id=? ORDER BY updated_at DESC", (project_id,))
 
 
 @app.post("/api/pipelines")
 def create_pipeline(payload: PipelineIn):
+    if not payload.name.strip():
+        raise ValueError("Pipeline name cannot be blank")
     validate_definition(payload.project_id, payload.definition)
-    pipeline_id = new_id()
+    pipeline_id = payload.id or new_id()
     with connect() as db:
         db.execute("INSERT INTO pipelines VALUES (?,?,?,?,?,?)",
-                   (pipeline_id, payload.project_id, payload.name, 1, now(), now()))
+                   (pipeline_id, payload.project_id, payload.name.strip(), 1, now(), now()))
         db.execute("INSERT INTO pipeline_versions VALUES (?,?,?,?)",
                    (pipeline_id, 1, json.dumps(payload.definition), now()))
     return {"id": pipeline_id, "version": 1}
 
 
 @app.get("/api/pipelines/{pipeline_id}")
-def pipeline_detail(pipeline_id: str):
+def pipeline_detail(pipeline_id: str, version: int | None = None):
+    if version is not None and version < 1:
+        raise ValueError("Version must be positive")
     with connect() as db:
         pipeline = one(db, "SELECT * FROM pipelines WHERE id=?", (pipeline_id,))
         versions = many(db, "SELECT version,created_at FROM pipeline_versions WHERE pipeline_id=? ORDER BY version DESC", (pipeline_id,))
         current = one(db, "SELECT * FROM pipeline_versions WHERE pipeline_id=? AND version=?",
-                      (pipeline_id, pipeline["current_version"]))
+                      (pipeline_id, version if version is not None else pipeline["current_version"]))
     pipeline["definition"] = json.loads(current["definition_json"])
     pipeline["versions"] = versions
+    pipeline["selected_version"] = current["version"]
     return pipeline
 
 
@@ -425,11 +455,16 @@ def save_pipeline_version(pipeline_id: str, payload: PipelineVersionIn):
     with connect() as db:
         pipeline = one(db, "SELECT * FROM pipelines WHERE id=?", (pipeline_id,))
     validate_definition(pipeline["project_id"], payload.definition)
-    name = payload.name.strip() if payload.name is not None else pipeline["name"]
-    if not name:
-        raise ValueError("Pipeline name cannot be blank")
-    version = pipeline["current_version"] + 1
     with connect() as db:
+        # Allocate the next version under the same write lock as its insertion.
+        db.execute("BEGIN IMMEDIATE")
+        current = one(db, "SELECT * FROM pipelines WHERE id=?", (pipeline_id,))
+        if payload.expected_current_version is not None and payload.expected_current_version != current["current_version"]:
+            raise HTTPException(409, "A newer version was saved elsewhere. Reload the pipeline before saving; your draft has been preserved.")
+        name = payload.name.strip() if payload.name is not None else current["name"]
+        if not name:
+            raise ValueError("Pipeline name cannot be blank")
+        version = current["current_version"] + 1
         db.execute("INSERT INTO pipeline_versions VALUES (?,?,?,?)",
                    (pipeline_id, version, json.dumps(payload.definition), now()))
         db.execute("UPDATE pipelines SET name=?, current_version=?, updated_at=? WHERE id=?",
@@ -438,9 +473,9 @@ def save_pipeline_version(pipeline_id: str, payload: PipelineVersionIn):
 
 
 @app.post("/api/pipelines/{pipeline_id}/duplicate")
-def duplicate_pipeline(pipeline_id: str):
-    detail = pipeline_detail(pipeline_id)
-    return create_pipeline(PipelineIn(project_id=detail["project_id"], name=detail["name"] + " copy",
+def duplicate_pipeline(pipeline_id: str, version: int | None = None):
+    detail = pipeline_detail(pipeline_id, version)
+    return create_pipeline(PipelineIn(project_id=detail["project_id"], name=detail["name"][:95] + " copy",
                                       definition=detail["definition"]))
 
 
@@ -480,7 +515,9 @@ def pipeline_script(payload: PipelineIn):
 def queue_run(pipeline_id: str, request: Request, version: int | None = None):
     with connect() as db:
         pipeline = one(db, "SELECT * FROM pipelines WHERE id=?", (pipeline_id,))
-        chosen = version or pipeline["current_version"]
+        if version is not None and version < 1:
+            raise ValueError("Version must be positive")
+        chosen = version if version is not None else pipeline["current_version"]
         one(db, "SELECT version FROM pipeline_versions WHERE pipeline_id=? AND version=?", (pipeline_id, chosen))
         key = request.headers.get("Idempotency-Key")
         if key:

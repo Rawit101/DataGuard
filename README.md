@@ -70,3 +70,11 @@ The [full system verification](docs/full-system-verification.md) records the cur
 See the [independent verification and fixes](docs/IndependentVerification.md) for the subsequent Linux audit, additional browser regressions, and the 1-million-row CSV check. Browser tests now default to an isolated `work/playwright-workspace` directory, or use the workspace explicitly set through `DATAGUARD_WORKSPACE`.
 
 The reproducible load and restart check is `.venv/bin/python scripts/audit/independent_load.py`. It starts its own server on loopback port 8001 and uses a temporary workspace. Set `DATAGUARD_AUDIT_ROWS=10000` for a smaller check. CSV imports require Python 3.12+ and temporary disk space for a normalized accepted-record file; raw source bytes remain unchanged. Nonfinite numeric values appear as the strings `NaN`, `Infinity`, and `-Infinity` in JSON previews; exported files retain their underlying values.
+
+See the [2026-10-13 mock-data audit](docs/MOCK_DATA_AUDIT.md), [functional verification](docs/FUNCTIONAL_VERIFICATION.md), and [remaining issues](docs/REMAINING_ISSUES.md) for the latest repository-wide audit and actual test results. Metadata schema 3 preserves execution-time quality-rule snapshots with a forward migration that retains existing history.
+
+The [pipeline/version and quality-status verification](docs/PipelineVersionVerification.md) documents the independent-pipeline controls, historical versions, severity labels, and the five-pipeline browser test across a real backend restart. Reproduce it with `.venv/bin/python scripts/audit/pipeline_persistence.py` after stopping the app on port 8000.
+
+## Real-data acceptance verification
+
+The October 2026 audit uses physical deterministic CSV fixtures and real browser/API/worker/database processing. Start with [the test plan](docs/E2E_TEST_PLAN.md), then see [actual results and reproduction commands](docs/E2E_TEST_RESULTS.md), [the feature matrix](docs/FEATURE_VERIFICATION_MATRIX.md), and [fixes](docs/BUG_FIX_REPORT.md). The controlled driver refuses an occupied port and uses fresh temporary storage; stop your normal app before running it and restore its original workspace afterward. It does not modify your saved workspace.

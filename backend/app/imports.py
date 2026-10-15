@@ -5,7 +5,7 @@ import hashlib
 import json
 import re
 from datetime import date, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP, localcontext
 from pathlib import Path
 from typing import Any
 
@@ -80,8 +80,16 @@ def type_valid(value: str | None, typ: str) -> bool:
         if typ == "BIGINT":
             return (re.fullmatch(r"[+-]?\d+", value) is not None
                     and -(2**63) <= int(value) < 2**63)
-        if typ in {"DOUBLE", "DECIMAL"}:
+        if typ == "DOUBLE":
             return Decimal(value).is_finite()
+        if typ == "DECIMAL":
+            number = Decimal(value)
+            if not number.is_finite() or abs(number) >= Decimal('1e15'):
+                return False
+            with localcontext() as context:
+                context.prec = 24
+                # DuckDB's unparameterized DECIMAL is DECIMAL(18,3).
+                return abs(number.quantize(Decimal('0.001'), rounding=ROUND_HALF_UP)) < Decimal('1e15')
         if typ == "DATE":
             date.fromisoformat(value)
         if typ == "TIMESTAMP":
@@ -100,12 +108,12 @@ def csv_rows(path: Path, opts: ImportOptions):
         columns: list[str] | None = None
         record = 0
         while True:
+            start_line = reader.line_num + 1
             try:
                 row = next(reader)
             except StopIteration:
                 break
             except (csv.Error, UnicodeError) as exc:
-                start_line = last_line + 1 if 'last_line' in locals() else 1
                 with path.open("r", encoding=opts.accepted_encoding(), errors="replace") as source:
                     # A failed CSV reader cannot reliably recover record boundaries. Record
                     # the entire unread tail as rejected, while the original file retains
@@ -115,10 +123,11 @@ def csv_rows(path: Path, opts: ImportOptions):
                 yield ("reject", start_line, None, raw,
                        f"CSV parse error from physical line {start_line}; remaining input rejected because record boundaries are uncertain: {exc}")
                 break
-            last_line = reader.line_num
             if columns is None:
                 if opts.header:
                     columns = [x.strip() or f"column_{i+1}" for i, x in enumerate(row)]
+                    if not columns:
+                        raise ValueError("CSV header has no columns")
                     normalized = [column.casefold() for column in columns]
                     if len(set(normalized)) != len(columns) or "__source_row_id" in normalized:
                         raise ValueError("CSV header has duplicate or reserved column names")
@@ -128,11 +137,11 @@ def csv_rows(path: Path, opts: ImportOptions):
                 yield ("header", columns)
             record += 1
             if len(row) != len(columns):
-                yield ("reject", reader.line_num, None, json.dumps(row, ensure_ascii=False),
+                yield ("reject", start_line, None, json.dumps(row, ensure_ascii=False),
                        f"Expected {len(columns)} columns, found {len(row)}")
             else:
                 values = [None if x in opts.null_tokens else x for x in row]
-                yield ("row", record, values)
+                yield ("row", record, values, start_line)
 
 
 async def stage_upload(upload: UploadFile, options: ImportOptions) -> dict:
@@ -195,6 +204,8 @@ def inspect_file(path: Path, options: ImportOptions) -> dict:
             if len(issues) < 20:
                 issues.append({"line": event[1], "reason": event[4]})
     if columns is None:
+        if issues:
+            raise ValueError(f"CSV could not be read using {options.encoding}: {issues[0]['reason']}")
         raise ValueError("CSV contains no header or records")
     schema = [{"name": col, "inferred_type": infer_type([r[i] for r in sample])}
               for i, col in enumerate(columns)]
@@ -246,7 +257,7 @@ def commit_import(project_id: str, token: str, name: str, alias: str | None,
                         row_id, values = event[1], event[2]
                         for i, col in enumerate(schema):
                             if not type_valid(values[i], col["declared_type"]):
-                                issues.append((event[1], col["name"], str(values[i]),
+                                issues.append((event[3], col["name"], str(values[i]),
                                                f"Cannot parse as {col['declared_type']}; value preserved"))
                         writer.writerow([row_id, *values])
                         count += 1
@@ -273,6 +284,18 @@ def commit_import(project_id: str, token: str, name: str, alias: str | None,
                 select_cols = ", ".join(quote_ident(c["name"]) for c in schema)
                 con.execute(f"COPY (SELECT row_number() OVER () AS __source_row_id, {select_cols} FROM read_parquet({sql_literal(tmp)})) TO {sql_literal(data_path)} (FORMAT parquet)")
                 count = state["preview"]["row_count"]
+                for column, typ in overrides.items():
+                    if typ == "VARCHAR":
+                        continue
+                    field = quote_ident(column)
+                    failures = con.execute(
+                        f"SELECT __source_row_id, CAST({field} AS VARCHAR) FROM read_parquet(?) "
+                        f"WHERE {field} IS NOT NULL AND TRY_CAST({field} AS {typ}) IS NULL LIMIT 100001",
+                        [str(data_path)]).fetchall()
+                    issues.extend((row_id, column, value, f"Cannot parse as {typ}; value preserved")
+                                  for row_id, value in failures)
+                    if len(issues) > 100000:
+                        raise ValueError("Import has more than 100,000 issues; fix the source or split the file")
             finally:
                 con.close()
         tmp.replace(raw_path)

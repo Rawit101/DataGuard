@@ -86,6 +86,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   background: #fff; color: #1c3431;
 }
 .field input[type="file"] { padding: 6px 8px; }
+/* Keep WebKit's option-menu layout within the explicitly sized control.
+   Layout containment preserves native selection without clipping a parent. */
+.field select, select.control, .table-wrap select {
+  appearance: none;
+  contain: layout;
+  min-height: var(--control-height);
+  padding-right: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2345665f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  background-size: 16px;
+}
 .field textarea, textarea.control { min-height: 120px; resize: vertical; line-height: 1.5; }
 .field input[type="checkbox"], .checkbox-field input[type="checkbox"], .row input[type="checkbox"] { width: 16px; height: 16px; min-width: 16px; margin: 0; accent-color: var(--accent); }
 .checkbox-field { display: inline-flex; align-items: center; gap: 8px; min-height: var(--control-height); min-width: 0; color: #3a5b54; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
@@ -168,6 +180,8 @@ tr:last-child td { border-bottom: 0; }
 .step-config { margin-top: 10px; }
 .pipeline-root { display: block; width: 100%; min-width: 0; margin: 0; padding: 0; border: 0; }
 .pipeline-actions { width: 100%; }
+.version-toolbar { margin-bottom: var(--space-4); }
+.pill.severity-badge { background: #edf2f5; color: #48616d; letter-spacing: 0; text-transform: none; }
 .dropzone { padding: 16px; border: 1px dashed #a9cfc3; border-radius: 11px; background: #f8fcfa; }
 .stack { display: grid; gap: var(--space-3); }
 .import-review { margin-top: var(--space-4); background: #f8fcfa; }

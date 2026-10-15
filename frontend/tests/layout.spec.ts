@@ -68,6 +68,10 @@ test('long Thai text, long columns, and pipeline JSON remain usable', async ({pa
   await expectLayoutWithinViewport(page)
   const table = page.locator('.table-wrap').last()
   expect(await table.evaluate(element => element.scrollWidth > element.clientWidth)).toBeTruthy()
+  await page.getByLabel('Direction', {exact: true}).focus()
+  await page.keyboard.press('d')
+  await page.keyboard.press('Enter')
+  await expect(page.getByLabel('Direction', {exact: true})).toHaveValue('desc')
 
   await page.locator('nav').getByRole('button', {name: 'Pipeline Builder', exact: true}).click()
   await page.getByRole('button', {name: 'Add step'}).click()

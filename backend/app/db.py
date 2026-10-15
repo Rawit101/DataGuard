@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS quality_rules (
 CREATE TABLE IF NOT EXISTS quality_runs (
  id TEXT PRIMARY KEY, rule_id TEXT NOT NULL REFERENCES quality_rules(id), status TEXT NOT NULL,
  evaluated_rows INTEGER NOT NULL, failed_rows INTEGER NOT NULL, examples_json TEXT NOT NULL,
- artifact_id TEXT, created_at TEXT NOT NULL
+ artifact_id TEXT, created_at TEXT NOT NULL, rule_snapshot_json TEXT
 );
 CREATE TABLE IF NOT EXISTS pipelines (
  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), name TEXT NOT NULL,
@@ -99,12 +99,14 @@ CREATE INDEX IF NOT EXISTS idx_rules_dataset ON quality_rules(dataset_id);
 def initialize_db() -> None:
     with connect() as con:
         con.executescript(SCHEMA)
+        if "rule_snapshot_json" not in {r[1] for r in con.execute("PRAGMA table_info(quality_runs)")}:
+            con.execute("ALTER TABLE quality_runs ADD COLUMN rule_snapshot_json TEXT")
         row = con.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
         if row is None:
-            con.execute("INSERT INTO meta VALUES ('schema_version','2')")
-        elif row[0] == "1":
-            con.execute("UPDATE meta SET value='2' WHERE key='schema_version'")
-        elif row[0] != "2":
+            con.execute("INSERT INTO meta VALUES ('schema_version','3')")
+        elif row[0] in {"1", "2"}:
+            con.execute("UPDATE meta SET value='3' WHERE key='schema_version'")
+        elif row[0] != "3":
             raise RuntimeError(f"Unsupported metadata schema version: {row[0]}")
         con.execute("UPDATE runs SET status='interrupted', finished_at=?, error='App stopped during run' WHERE status='running'", (now(),))
         con.execute("UPDATE export_jobs SET status='interrupted', finished_at=?, error='App stopped during export' WHERE status='running'", (now(),))

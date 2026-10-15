@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 from contextlib import contextmanager
@@ -154,14 +155,16 @@ def profile_dataset(dataset_id: str) -> dict:
                     "min": json_value(stats[2]), "max": json_value(stats[3]),
                     "mean": None, "invalid_count": None, "summary_basis": "text"}
             declared = col["declared_type"].upper()
-            if declared in {"BIGINT", "DOUBLE", "DECIMAL", "DATE", "TIMESTAMP", "BOOLEAN"}:
+            numeric = bool(re.fullmatch(
+                r"(?:U?(?:TINYINT|SMALLINT|INTEGER|BIGINT|HUGEINT)|FLOAT|REAL|DOUBLE|DECIMAL(?:\(\d+,\d+\))?)", declared))
+            if numeric or declared in {"DATE", "TIMESTAMP", "TIMESTAMP_NS", "TIMESTAMP_MS", "TIMESTAMP_S", "TIMESTAMP WITH TIME ZONE", "BOOLEAN"}:
                 typed = con.execute(
                     f"SELECT min(TRY_CAST({field} AS {declared})), max(TRY_CAST({field} AS {declared})), "
                     f"count(*) FILTER (WHERE {field} IS NOT NULL AND TRY_CAST({field} AS {declared}) IS NULL) "
                     f"FROM {table}").fetchone()
                 item.update({"min": json_value(typed[0]), "max": json_value(typed[1]),
                              "invalid_count": typed[2], "summary_basis": "valid parsed values"})
-                if declared in {"BIGINT", "DOUBLE", "DECIMAL"}:
+                if numeric:
                     item["mean"] = json_value(con.execute(
                         f"SELECT avg(TRY_CAST({field} AS DOUBLE)) FROM {table}").fetchone()[0])
             results.append(item)

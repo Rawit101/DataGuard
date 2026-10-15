@@ -232,9 +232,9 @@ test('fresh Thai data cleans, joins, aggregates and exports through the pipeline
   await expect(page.getByText('3 total rows')).toBeVisible()
   const expected = [{ref_name:'เหนือ',total:350,__source_count:2}, {ref_name:'ใต้',total:150,__source_count:1}, {ref_name:'ไม่ทราบ',total:400,__source_count:1}]
   const saveResponse = page.waitForResponse(r=>r.url().endsWith('/api/pipelines') && r.request().method()==='POST')
-  await page.getByRole('button', {name:'Save version'}).click()
+  await page.getByRole('button', {name:'Save pipeline'}).click()
   const pipeline = (await (await saveResponse).json()).id
-  const runResponse = page.waitForResponse(r=>/\/pipelines\/[^/]+\/run$/.test(r.url()))
+  const runResponse = page.waitForResponse(r=>/\/pipelines\/[^/]+\/run$/.test(new URL(r.url()).pathname))
   await page.getByRole('button', {name:'Run saved version'}).click()
   const run = (await (await runResponse).json()).id
   await expect.poll(async()=> (await (await request.get(`/api/runs/${run}`)).json()).status).toBe('completed')
@@ -252,7 +252,7 @@ test('fresh Thai data cleans, joins, aggregates and exports through the pipeline
   await expect(page.getByRole('checkbox', {name:'UTF-8 BOM',exact:true})).toBeChecked()
   await page.getByRole('button', {name:'Save version'}).click()
   await expect(page.getByRole('button', {name:'Run saved version'})).toBeEnabled()
-  const secondResponse = page.waitForResponse(r=>r.url().endsWith(`/api/pipelines/${pipeline}/run`))
+  const secondResponse = page.waitForResponse(r=>new URL(r.url()).pathname.endsWith(`/api/pipelines/${pipeline}/run`))
   await page.getByRole('button', {name:'Run saved version'}).click()
   const second = (await (await secondResponse).json()).id
   await expect.poll(async()=> (await (await request.get(`/api/runs/${second}`)).json()).status).toBe('completed')
@@ -294,7 +294,7 @@ test('actual SQL export and pipeline jobs cancel from browser controls', async (
   const pipeline = (await pipelineResponse.json()).id
   await page.getByRole('button', {name:'Pipeline Builder', exact:true}).click()
   await page.getByRole('button', {name:/Audit long pipeline/}).click()
-  const runResponse = page.waitForResponse(r=>r.url().endsWith(`/api/pipelines/${pipeline}/run`))
+  const runResponse = page.waitForResponse(r=>new URL(r.url()).pathname.endsWith(`/api/pipelines/${pipeline}/run`))
   await page.getByRole('button', {name:'Run saved version'}).click()
   const run = (await (await runResponse).json()).id
   await expect.poll(async()=> (await (await request.get(`/api/runs/${run}`)).json()).status).toBe('running')

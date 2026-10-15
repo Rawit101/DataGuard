@@ -19,6 +19,13 @@ def rule_condition(rule: dict, columns: set[str], project_id: str) -> str | None
     cfg = json.loads(rule["config_json"]) if isinstance(rule["config_json"], str) else rule["config_json"]
     if kind not in KINDS:
         raise ValueError("Unknown quality rule")
+    if "columns" in cfg and (not isinstance(cfg["columns"], list) or
+                             any(not isinstance(name, str) for name in cfg["columns"])):
+        raise ValueError("Rule columns must be a list of names")
+    if "column" in cfg and not isinstance(cfg["column"], str):
+        raise ValueError("Rule column must be a name")
+    if "type" in cfg and not isinstance(cfg["type"], str):
+        raise ValueError("Rule type must be a type name")
     if kind == "row_count":
         return None
     names = cfg.get("columns") or ([cfg["column"]] if cfg.get("column") else [])
@@ -29,6 +36,8 @@ def rule_condition(rule: dict, columns: set[str], project_id: str) -> str | None
     if kind == "required":
         return " OR ".join(f"({f} IS NULL{' OR trim(cast(' + f + " AS VARCHAR)) = ''" if cfg.get("blank_is_missing") else ''})" for f in fields)
     if kind == "unique":
+        if not isinstance(cfg.get("count_mode", "all"), str) or cfg.get("count_mode", "all") not in {"all", "beyond_first"}:
+            raise ValueError("Unique count mode must be all or beyond_first")
         nonnull = " AND ".join(f"{f} IS NOT NULL" for f in fields)
         partition = ", ".join(fields)
         return f"({nonnull}) AND count(*) OVER (PARTITION BY {partition}) > 1"
@@ -51,18 +60,18 @@ def rule_condition(rule: dict, columns: set[str], project_id: str) -> str | None
         return f"{col} IS NOT NULL AND (try_cast({col} AS {typ}) IS NULL OR {' OR '.join(checks)})"
     if kind == "accepted":
         values = cfg.get("values")
-        if not isinstance(values, list) or not values or any(value is None for value in values):
+        if not isinstance(values, list) or not values or any(value is None or isinstance(value, (dict, list)) for value in values):
             raise ValueError("Accepted values must be a nonempty list without null")
         return f"{col} IS NOT NULL AND {col} NOT IN ({', '.join(sql_literal(x) for x in values)})"
     if kind == "regex":
         pattern = cfg.get("pattern", "")
-        if not pattern or len(pattern) > 500:
+        if not isinstance(pattern, str) or not pattern or len(pattern) > 500:
             raise ValueError("Invalid pattern")
         try:
             re.compile(pattern)
         except re.error as exc:
             raise ValueError(f"Invalid pattern: {exc}") from exc
-        return f"{col} IS NOT NULL AND NOT regexp_full_match({col}, {sql_literal(pattern)})"
+        return f"{col} IS NOT NULL AND NOT regexp_full_match(CAST({col} AS VARCHAR), {sql_literal(pattern)})"
     if kind == "foreign_key":
         with connect() as db:
             ref = one(db, "SELECT * FROM datasets WHERE id=? AND project_id=?",
@@ -89,6 +98,21 @@ def validate_rule_for_dataset(kind: str, config: dict, dataset_id: str, project_
             raise ValueError("Row count needs nonnegative integer bounds in order")
     columns = {c["name"] for c in json.loads(dataset["schema_json"])} | {"__source_row_id"}
     rule_condition({"kind": kind, "config_json": config}, columns, project_id)
+    if kind in {"range", "regex"}:
+        with data_connection(project_id) as con:
+            if kind == "regex":
+                # DuckDB uses RE2, whose supported syntax differs from Python's re.
+                con.execute("SELECT regexp_full_match('', ?)", [config['pattern']])
+            else:
+                typ = config.get("type", "DOUBLE").upper()
+                values = [config.get("min"), config.get("max")]
+                if any(isinstance(value, (dict, list)) for value in values):
+                    raise ValueError("Range bounds must be scalar values")
+                bounds = con.execute(f"SELECT TRY_CAST(? AS {typ}), TRY_CAST(? AS {typ})", values).fetchone()
+                if any(value is not None and bound is None for value, bound in zip(values, bounds)):
+                    raise ValueError(f"Range bounds must parse as {typ}")
+                if all(bound is not None for bound in bounds) and bounds[0] > bounds[1]:
+                    raise ValueError("Range minimum cannot exceed maximum")
 
 
 def evaluate_rule(con, rule: dict, alias: str, columns: set[str], project_id: str,
@@ -113,8 +137,14 @@ def evaluate_rule(con, rule: dict, alias: str, columns: set[str], project_id: st
             while count_column.casefold() in {c.casefold() for c in columns}:
                 count_column += "_"
             field = quote_ident(count_column)
+            if cfg.get("count_mode", "all") == "beyond_first":
+                ordering = quote_ident("__source_row_id") if "__source_row_id" in columns else ", ".join(
+                    quote_ident(name) for name in sorted(columns))
+                measure = f"row_number() OVER (PARTITION BY {parts} ORDER BY {ordering})"
+            else:
+                measure = f"count(*) OVER (PARTITION BY {parts})"
             failed_sql = (f"SELECT * EXCLUDE ({field}) FROM "
-                          f"(SELECT *, count(*) OVER (PARTITION BY {parts}) AS {field} FROM {table}) AS source "
+                          f"(SELECT *, {measure} AS {field} FROM {table}) AS source "
                           f"WHERE ({condition}) AND {field} > 1")
         else:
             failed_sql = f"SELECT * FROM {table} AS source WHERE {where}"
@@ -142,9 +172,11 @@ def evaluate_rule(con, rule: dict, alias: str, columns: set[str], project_id: st
                     db.execute("INSERT INTO artifacts VALUES (?,?,?,?,?,?,?,?,?)",
                                (artifact_id, project_id, None, "quality_failures", "csv", str(output),
                                 f"{rule['name']}_failures.csv", failed, now()))
-                db.execute("INSERT INTO quality_runs VALUES (?,?,?,?,?,?,?,?)",
+                snapshot = {key: rule[key] for key in ("name", "kind", "severity", "dataset_id")}
+                snapshot["config"] = cfg
+                db.execute("INSERT INTO quality_runs VALUES (?,?,?,?,?,?,?,?,?)",
                            (run_id, rule["id"], result["status"], evaluated, failed,
-                            json.dumps(examples, default=str), artifact_id, now()))
+                            json.dumps(examples, default=str), artifact_id, now(), json.dumps(snapshot)))
         except Exception:
             if output is not None:
                 output.unlink(missing_ok=True)

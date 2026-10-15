@@ -15,7 +15,10 @@ export function Overview({projectId,refresh,notify,navigate,selectProject}:PageP
   const [name,setName]=useState('')
   const [rename,setRename]=useState('')
   const [busy,setBusy]=useState(false)
-  useEffect(()=>{let active=true;setData(null);if(projectId)api<OverviewData>(`/projects/${projectId}/overview`).then(result=>{if(active){setData(result);setRename(result.project.name)}}).catch(e=>{if(active)notify(String(e),true)});return()=>{active=false}},[projectId])
+  const [loading,setLoading]=useState(false)
+  const [loadError,setLoadError]=useState('')
+  const [reload,setReload]=useState(0)
+  useEffect(()=>{let active=true;setData(null);setLoadError('');setLoading(Boolean(projectId));if(projectId)api<OverviewData>(`/projects/${projectId}/overview`).then(result=>{if(active){setData(result);setRename(result.project.name)}}).catch(e=>{if(active){setLoadError(String(e));notify(String(e),true)}}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[projectId,reload])
   async function create(){if(!name.trim())return;setBusy(true);try{const p=await post<{id:string}>('/projects',{name:name.trim()});selectProject(p.id);setName('');refresh();notify('Project created')}catch(e){notify(String(e),true)}finally{setBusy(false)}}
   async function demo(){setBusy(true);try{const result=await post<{project_id:string}>('/demo/load',{});selectProject(result.project_id);refresh();notify('Sample project loaded with datasets, quality rules, and a pipeline')}catch(e){notify(String(e),true)}finally{setBusy(false)}}
   async function renameProject(){if(!projectId||!rename.trim())return;setBusy(true);try{const result=await put<{name:string}>(`/projects/${projectId}`,{name:rename.trim()});setData(old=>old?{...old,project:{...old.project,name:result.name}}:old);refresh();notify('Project renamed')}catch(e){notify(String(e),true)}finally{setBusy(false)}}
@@ -59,6 +62,6 @@ export function Overview({projectId,refresh,notify,navigate,selectProject}:PageP
         <div className="card-header"><h2>Recent runs</h2><button className="btn small" onClick={()=>navigate('runs')}>View runs <ArrowRight/></button></div>
         {data.runs.length?<div className="table-wrap"><table><thead><tr><th>Run</th><th>Status</th><th>Created</th></tr></thead><tbody>{data.runs.map(r=><tr key={r.id}><td className="mono">{r.id.slice(0,10)}</td><td><span className={'pill '+r.status}>{r.status}</span></td><td>{new Date(r.created_at).toLocaleString()}</td></tr>)}</tbody></table></div>:<div className="empty"><strong>No runs yet</strong>Load the sample pipeline and run it.</div>}
       </section>
-    </>:<div className="card empty"><strong>No project selected</strong>Create a project above to start the full workflow.</div>}
+    </>:loading?<div className="card" role="status">Loading project overview…</div>:loadError?<div className="card notice error" role="alert">{loadError} <button className="btn small" onClick={()=>setReload(v=>v+1)}>Retry overview</button></div>:<div className="card empty"><strong>No project selected</strong>Create a project above to start the full workflow.</div>}
   </>
 }

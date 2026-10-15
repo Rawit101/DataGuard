@@ -1,0 +1,52 @@
+{
+  "row_count": 6,
+  "duplicates_beyond_first": 1,
+  "missing_province": 2,
+  "total_amount": 13000,
+  "amount_gt_1500": 4,
+  "distinct_customer_ids": 5,
+  "bangkok": 2,
+  "province_groups": [
+    {
+      "province": null,
+      "n": 2
+    },
+    {
+      "province": "Bangkok",
+      "n": 2
+    },
+    {
+      "province": "Chiang Mai",
+      "n": 1
+    },
+    {
+      "province": "Phuket",
+      "n": 1
+    }
+  ],
+  "cleaned_rows": [
+    {
+      "customer_id": "2",
+      "name": "Suda",
+      "province": "Chiang Mai",
+      "amount": "2500"
+    },
+    {
+      "customer_id": "4",
+      "name": "Mali",
+      "province": "",
+      "amount": "3000"
+    },
+    {
+      "customer_id": "5",
+      "name": "Nida",
+      "province": "Phuket",
+      "amount": "2000"
+    }
+  ],
+  "large": {
+    "rows": 50000,
+    "sum_amount": 24836625,
+    "last_label": "ลูกค้า_50000"
+  }
+}

@@ -2,6 +2,22 @@
 /work/
 /.dataguard/
 /.npm-cache/
+**/.dataguard/
+# Alternate locations for local managed data and unpublished artifacts
+/raw/
+/data/
+/uploads/
+/exports/
+/tmp/
+/artifacts/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.duckdb
+*.duckdb.*
 **/playwright-browsers/
 **/ms-playwright/
 **/.playwright/
@@ -23,6 +39,9 @@
 **/.mypy_cache/
 **/.ruff_cache/
 **/.tox/
+**/.cache/
+**/.vite/
+**/.npm/
 **/playwright-report/
 **/test-results/
 **/coverage/
@@ -36,10 +55,20 @@
 .env.*
 !.env.example
 *.pem
+*.key
 *.p12
 *.pfx
 id_rsa*
 id_ed25519*
+.aws/
+.ssh/
+.gnupg/
+.netrc
+.pypirc
+credentials.json
+credentials.*.json
+service-account*.json
+*.service-account.json
 
 # OS metadata
 .DS_Store
