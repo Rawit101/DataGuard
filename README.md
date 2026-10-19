@@ -44,6 +44,7 @@ Choose **Load sample project** on Overview, then follow [the user guide](docs/Us
 ## Checks
 
 ```sh
+.venv/bin/python -m pip install -r backend/requirements-dev.txt
 .venv/bin/python -m pytest -q backend/tests
 cd frontend
 npm run test

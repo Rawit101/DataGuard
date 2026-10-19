@@ -16,4 +16,4 @@ Keep the import boundary producing an immutable managed snapshot and metadata re
 
 ## Checks and migrations
 
-Run `.venv/bin/python -m pytest -q backend/tests` and, from `frontend`, `npm run test`, `npm run lint`, `npm run build`, and `npm run e2e` where the browser is available. Backend tests use an isolated `DATAGUARD_WORKSPACE`. Update `db.py` and increment `schema_version` for metadata changes, adding a forward migration rather than modifying earlier installed workspaces in place. Use immutable pipeline versions for definition changes.
+Install test tools with `.venv/bin/python -m pip install -r backend/requirements-dev.txt`. Run `.venv/bin/python -m pytest -q backend/tests` and, from `frontend`, `npm run test`, `npm run lint`, `npm run build`, and `npm run e2e` where the browser is available. Backend tests use an isolated `DATAGUARD_WORKSPACE`. Update `db.py` and increment `schema_version` for metadata changes, adding a forward migration rather than modifying earlier installed workspaces in place. Use immutable pipeline versions for definition changes.
