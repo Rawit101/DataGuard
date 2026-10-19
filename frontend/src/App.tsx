@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Activity, Database, GitBranch, Home, Settings, ShieldCheck, SquareTerminal } from 'lucide-react'
 import { api, type Project } from './api'
 import { Overview } from './Overview'
@@ -19,6 +19,10 @@ const pages = [
   {id:'help', label:'Settings & Help', icon:Settings, subtitle:'Setup, limits, and a guided workflow'}
 ] as const
 export type PageId = typeof pages[number]['id']
+// Storage can be unavailable (blocked site data, some private modes); the app must still load.
+function readStoredProject(){try{return localStorage.getItem('dataguard-project') || ''}catch{return ''}}
+function storeProject(id:string){try{localStorage.setItem('dataguard-project',id)}catch{/* per-viewer convenience only */}}
+
 export type PageProps = { projectId:string; refresh:()=>void; notify:(message:string, error?:boolean)=>void; navigate:(page:PageId)=>void }
 
 export default function App(){
@@ -26,10 +30,13 @@ export default function App(){
   const [projects,setProjects] = useState<Project[]>([])
   const [projectsLoaded,setProjectsLoaded] = useState(false)
   const [projectsError,setProjectsError] = useState('')
-  const [projectId,setProjectId] = useState(localStorage.getItem('dataguard-project') || '')
+  const [projectId,setProjectId] = useState(readStoredProject)
   const [notice,setNotice] = useState<{message:string;error:boolean}|null>(null)
   const [refreshKey,setRefreshKey] = useState(0)
-  const notify=(message:string,error=false)=>{setNotice({message,error});window.setTimeout(()=>setNotice(null),7000)}
+  const noticeTimer=useRef<number|undefined>(undefined)
+  // Restart the timer so an older notice cannot dismiss a newer one early.
+  const notify=(message:string,error=false)=>{setNotice({message,error});window.clearTimeout(noticeTimer.current);noticeTimer.current=window.setTimeout(()=>setNotice(null),7000)}
+  useEffect(()=>()=>window.clearTimeout(noticeTimer.current),[])
   const refresh=()=>setRefreshKey(v=>v+1)
   useEffect(()=>{api<Project[]>('/projects').then(items=>{
     setProjects(items)
@@ -37,7 +44,7 @@ export default function App(){
     setProjectsError('')
     setProjectsLoaded(true)
   }).catch(e=>{setProjectsError(String(e));notify(String(e),true)})},[refreshKey])
-  useEffect(()=>{localStorage.setItem('dataguard-project',projectId)},[projectId])
+  useEffect(()=>{storeProject(projectId)},[projectId])
   const current=pages.find(p=>p.id===page) || pages[0]
   const props:PageProps={projectId,refresh,notify,navigate:setPage}
   return <div className="app">
