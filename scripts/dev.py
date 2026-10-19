@@ -1,4 +1,8 @@
-"""Build and launch the local UI, API, and worker at one browser URL."""
+"""Build and launch the local UI, API, and worker at one browser URL.
+
+This serves a production build (no hot reload). For live UI reloading, run the API
+on port 8000 and `npm run dev` in frontend/, then open http://127.0.0.1:5173.
+"""
 from __future__ import annotations
 
 import os
@@ -28,7 +32,7 @@ def check_port(port: int) -> None:
 def main() -> None:
     check_port(8000)
     if not (ROOT / "frontend/node_modules").exists():
-        raise SystemExit("Install frontend dependencies first: cd frontend && npm install")
+        raise SystemExit("Install frontend dependencies first: cd frontend && npm ci")
     subprocess.run(["npm.cmd" if os.name == "nt" else "npm", "run", "build"],
                    cwd=ROOT / "frontend", check=True)
     backend = subprocess.Popen([str(python_bin()), "-m", "uvicorn", "backend.app.main:app",
