@@ -16,4 +16,8 @@ Keep the import boundary producing an immutable managed snapshot and metadata re
 
 ## Checks and migrations
 
-Install test tools with `.venv/bin/python -m pip install -r backend/requirements-dev.txt`. Run `.venv/bin/python -m pytest -q backend/tests` and, from `frontend`, `npm run test`, `npm run lint`, `npm run build`, and `npm run e2e` where the browser is available. Backend tests use an isolated `DATAGUARD_WORKSPACE`. Update `db.py` and increment `schema_version` for metadata changes, adding a forward migration rather than modifying earlier installed workspaces in place. Use immutable pipeline versions for definition changes.
+Install test tools with `.venv/bin/python -m pip install -r backend/requirements-dev.txt`. Run `.venv/bin/python -m pytest -q backend/tests` and, from `frontend`, `npm run test`, `npm run lint`, `npm run build`, and `npm run e2e` where the browser is available. The real-data driver covers Chromium, WebKit and Firefox: `.venv/bin/python scripts/audit/real_data_system.py --browser firefox`. Backend tests use an isolated `DATAGUARD_WORKSPACE`. Update `db.py` and increment `schema_version` for metadata changes, adding a forward migration rather than modifying earlier installed workspaces in place. Use immutable pipeline versions for definition changes.
+
+## Backup
+
+`scripts/backup.py` creates a verified workspace archive using the sqlite3 backup API, so it is consistent while the app is running. Keep its output under `work/` (ignored by Git) or another external location. See [Backup and restore](Backup.md).

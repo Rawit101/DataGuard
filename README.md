@@ -53,7 +53,26 @@ npm run build
 npm run e2e
 ```
 
-Browser tests use Playwright Chromium. Install its browser once with `npx playwright install chromium`. Backend integration tests use isolated temporary workspaces. The API docs are available at `/docs` while the app is running.
+Browser tests use Playwright. Install the browsers once with `npx playwright install chromium webkit firefox`. Backend integration tests use isolated temporary workspaces. The API docs are available at `/docs` while the app is running.
+
+The full real-data browser and restart check runs one browser at a time with port 8000 free:
+
+```sh
+PLAYWRIGHT_BROWSERS_PATH="$PWD/work/playwright-browsers" .venv/bin/python scripts/audit/real_data_system.py --browser chromium --evidence work/real-data-e2e-evidence/chromium
+PLAYWRIGHT_BROWSERS_PATH="$PWD/work/playwright-browsers" .venv/bin/python scripts/audit/real_data_system.py --browser webkit --evidence work/real-data-e2e-evidence/webkit
+PLAYWRIGHT_BROWSERS_PATH="$PWD/work/playwright-browsers" .venv/bin/python scripts/audit/real_data_system.py --browser firefox --evidence work/real-data-e2e-evidence/firefox
+```
+
+## Backup
+
+```sh
+.venv/bin/python scripts/backup.py
+```
+
+This writes a verified archive of the workspace to `work/backups/`. It is safe while
+the app is running and re-checks the database and every file hash before reporting
+success. See [Backup and restore](docs/Backup.md) for options, restore steps and a
+scheduled example.
 
 ## Troubleshooting
 
