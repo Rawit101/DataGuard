@@ -68,7 +68,7 @@ def assertions(workspace, state, evidence):
 
 def main():
     parser=argparse.ArgumentParser()
-    parser.add_argument('--browser',choices=['chromium','webkit'],default='chromium')
+    parser.add_argument('--browser',choices=['chromium','webkit','firefox'],default='chromium')
     parser.add_argument('--evidence',type=Path,default=ROOT/'work/real-data-e2e-evidence/chromium')
     args=parser.parse_args()
     evidence=args.evidence.resolve();evidence.mkdir(parents=True,exist_ok=True)

@@ -136,3 +136,24 @@ Generated logs, screenshots, downloads, snapshots and backups remain ignored und
 - One existing dependency deprecation warning remains. Local port8000 must be free for the reproducible driver.
 
 The application is restored at http://127.0.0.1:8000 with the original saved workspace.
+
+## Re-verification 21 October 2026
+
+The suite above was re-run against the current branch `clean-source` after commit `a3cf22c`, and Firefox coverage was added. `scripts/audit/real_data_system.py` now accepts `--browser firefox`; Playwright Firefox 142.0.1 was installed under `work/playwright-browsers`.
+
+| Check | Actual result | Status |
+|---|---|---|
+| Backend pytest | 89 passed; same single Starlette/AnyIO deprecation warning | PASS |
+| Frontend unit tests | 2 passed | PASS |
+| ESLint and production build | Both exit 0 | PASS |
+| Chromium real-data suite | 27 passed + 2 passed after an actual restart | PASS |
+| WebKit real-data suite | 27 passed + 2 passed after an actual restart | PASS |
+| Firefox real-data suite | 27 passed + 2 passed after an actual restart | PASS |
+| Per-browser SQLite/file assertions | PASS for all three engines: raw bytes and SHA-256 exact, 50,000-row Parquet sum 24,836,625, overview 6/4/4 | PASS |
+| Restart persistence | Metadata rows and stored-file hashes identical; downloaded artifacts match pre-restart hashes | PASS |
+| `pip check` and `git diff --check` | Clean | PASS |
+| Original `work/full-system-workspace` | No file modified; every driver used a temporary workspace | PASS |
+
+Totals: 89 backend + 2 frontend unit + 3 × 29 browser executions = 178 passed, 0 failed. The earlier 15 October run remains valid for Chromium and WebKit.
+
+Native Safari and Windows remain untested; Firefox coverage above is the Playwright Firefox engine on macOS, not a manual native-browser pass.

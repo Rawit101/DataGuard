@@ -68,5 +68,5 @@ Evidence keys:
 | Project/dataset/pipeline delete | Supported-operations inventory | No destructive action assumed | No delete API/UI for these resources | API inventory | NOT SUPPORTED |
 | Auth/multi-user authorization | Architecture inventory | Explicit capability statement | Local single-user app; no login/access-control model | main.py; settings local_only | NOT SUPPORTED |
 | Extra dashboard KPIs/charts | Project total, quality rate, charts | Verify only implemented displays | These displays do not exist | Overview.tsx; API inventory | NOT SUPPORTED |
-| Native Safari/Firefox/Windows | Platform coverage | Actual native tests needed | Chromium/WebKit engines on macOS only | Browser logs | NOT TESTED |
+| Native Safari/Windows | Platform coverage | Actual native tests needed | Chromium, WebKit and Playwright Firefox 142.0.1 on macOS only; native Safari and Windows untested | Browser logs (15 and 21 October 2026) | PARTIAL |
 | Default256 MiB boundary/peak memory | Resource coverage | Dedicated large-boundary/RSS run | 4 MiB cap and50k fixture used; no peak memory measurement | environment.json | NOT TESTED |

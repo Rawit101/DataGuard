@@ -15,11 +15,11 @@ All mutation-heavy workflows run on loopback port 8000 with a newly created temp
 7. Reconcile every implemented overview KPI and recent-run row against SQLite/API. No unsupported KPI/chart claims.
 8. Test local security boundaries: SQL, traversal, origin/host guards, cross-project references, invalid inputs, upload limits and actual unavailable-network retry. Settings are read-only; project/dataset/pipeline deletion and authentication are not implemented.
 9. Stop/restart the actual isolated server process; compare every metadata row/file hash, reload projects/history/artifacts and execute five saved pipelines again.
-10. Run backend/unit/lint/build and Chromium/WebKit suites. Capture actual requests, response codes, browser errors, screenshots, backend logs, full database snapshots and parsed downloads. No substituted success responses.
+10. Run backend/unit/lint/build and Chromium/WebKit/Firefox suites. Capture actual requests, response codes, browser errors, screenshots, backend logs, full database snapshots and parsed downloads. No substituted success responses.
 
 ## Limits
 
-The isolated HTTP suite uses a 4 MiB upload cap and 2-second SQL timeout to test practical limits without uploading a 256 MiB boundary file. Defaults remain unchanged. Large fixture: 50,000 deterministic rows; the existing load driver additionally supports 1,000,000 rows. WebKit is an engine check, not proof of native Safari compatibility. Mutation requests without Origin remain allowed for local CLI/API clients; this is a local single-user application with no authentication.
+The isolated HTTP suite uses a 4 MiB upload cap and 2-second SQL timeout to test practical limits without uploading a 256 MiB boundary file. Defaults remain unchanged. Large fixture: 50,000 deterministic rows; the existing load driver additionally supports 1,000,000 rows. WebKit and Firefox are engine checks, not proof of native Safari or Firefox compatibility. Mutation requests without Origin remain allowed for local CLI/API clients; this is a local single-user application with no authentication.
 
 ## Planned commands
 
