@@ -16,6 +16,7 @@ import hashlib
 import json
 import os
 import shutil
+import signal
 import sqlite3
 import sys
 import tarfile
@@ -58,15 +59,14 @@ def copy_database(source: Path, destination: Path) -> None:
         src.backup(dst)
 
 
-def verify_database(copy: Path, expected: dict) -> dict:
+def verify_database(copy: Path) -> dict:
     with sqlite3.connect(f"file:{copy}?mode=ro", uri=True) as db:
         integrity = db.execute("PRAGMA integrity_check").fetchone()[0]
         if integrity != "ok":
             raise SystemExit(f"Database backup failed integrity_check: {integrity}")
-    actual = database_summary(copy)
-    if actual != expected:
-        raise SystemExit(f"Database backup does not match source: {actual} != {expected}")
-    return actual
+    # Describe the immutable backup, not a separately observed live database.
+    # Source rows may legitimately change before or after sqlite3.backup().
+    return database_summary(copy)
 
 
 def collect(workspace: Path, staging: Path) -> list[dict]:
@@ -153,9 +153,8 @@ def main() -> None:
     with tempfile.TemporaryDirectory(dir=output, prefix=".staging-") as temporary:
         staging = Path(temporary) / ARCHIVE_PREFIX
         staging.mkdir()
-        source = database_summary(workspace / "metadata.sqlite3")
         entries = collect(workspace, staging)
-        verified = verify_database(staging / "metadata.sqlite3", source)
+        verified = verify_database(staging / "metadata.sqlite3")
         manifest = {
             "created_at": created.isoformat(),
             "source_workspace": str(workspace),
@@ -164,11 +163,16 @@ def main() -> None:
             "file_count": len(entries),
             "total_bytes": sum(entry["bytes"] for entry in entries),
             "files": entries,
-            "restore": f"Stop the app, extract {ARCHIVE_PREFIX}/ over the workspace directory, then start the app.",
+            "restore": (f"Stop the app, extract and validate {ARCHIVE_PREFIX}/, then move the original "
+                        "workspace aside and restore to its original path. Keep the original until validated."),
         }
         (staging / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-        write_archive(staging, archive)
-        verify_archive(archive, entries)
+        # Keep unpublished output inside the cleanup context, on the same
+        # filesystem as the final archive so publication is an atomic rename.
+        pending_archive = Path(temporary) / "archive.tar.gz"
+        write_archive(staging, pending_archive)
+        verify_archive(pending_archive, entries)
+        pending_archive.replace(archive)
 
     removed = prune(output, args.keep)
     size = archive.stat().st_size
@@ -183,7 +187,13 @@ def main() -> None:
         print("Pruned:    " + ", ".join(path.name for path in removed))
 
 
+def _terminate(signum, _frame):
+    # Let the staging context unwind on ordinary process termination too.
+    raise SystemExit(128 + signum)
+
+
 if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, _terminate)
     try:
         main()
     except KeyboardInterrupt:
